@@ -1,0 +1,115 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <title>iPhoneタッチ検証キャンバス</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+
+  <style>
+    html, body {
+      margin: 0;
+      padding: 0;
+      height: 100%;
+      overflow: hidden;
+    }
+    #debug {
+      position: fixed;
+      left: 0;
+      top: 0;
+      padding: 4px 6px;
+      background: rgba(0,0,0,0.5);
+      color: #fff;
+      font-size: 12px;
+      z-index: 10;
+    }
+    canvas {
+      display: block;
+      width: 100vw;
+      height: 100vh;
+      background: #fff;
+      touch-action: none;
+    }
+  </style>
+</head>
+<body>
+  <div id="debug">no event</div>
+  <canvas id="c"></canvas>
+
+  <script>
+    const canvas = document.getElementById('c');
+    const dbg    = document.getElementById('debug');
+    const ctx    = canvas.getContext('2d');
+
+    function resize() {
+      canvas.width  = window.innerWidth;
+      canvas.height = window.innerHeight;
+      ctx.fillStyle = '#000';
+    }
+    window.addEventListener('resize', resize);
+    resize();
+
+    let drawing = false;
+
+    function log(msg) {
+      dbg.textContent = msg;
+    }
+
+    function getTouchPos(e) {
+      const rect = canvas.getBoundingClientRect();
+      const t = e.touches[0] || e.changedTouches[0];
+      return {
+        x: t.clientX - rect.left,
+        y: t.clientY - rect.top
+      };
+    }
+
+    // マウス（PC動作確認用）
+    canvas.addEventListener('mousedown', e => {
+      if (e.button !== 0) return;
+      drawing = true;
+      log('mousedown');
+    });
+    window.addEventListener('mousemove', e => {
+      if (!drawing) return;
+      const rect = canvas.getBoundingClientRect();
+      const x = e.clientX - rect.left;
+      const y = e.clientY - rect.top;
+      ctx.fillRect(x-2, y-2, 4, 4);
+      log(`mouse ${x.toFixed(0)},${y.toFixed(0)}`);
+    });
+    window.addEventListener('mouseup', () => {
+      drawing = false;
+      log('mouseup');
+    });
+
+    // タッチ（iPhone / iPad）
+    canvas.addEventListener('touchstart', e => {
+      drawing = true;
+      const p = getTouchPos(e);
+      ctx.fillRect(p.x-2, p.y-2, 4, 4);
+      log(`touchstart ${p.x.toFixed(0)},${p.y.toFixed(0)}`);
+      e.preventDefault();
+    }, { passive: false });
+
+    canvas.addEventListener('touchmove', e => {
+      if (!drawing) return;
+      const p = getTouchPos(e);
+      ctx.fillRect(p.x-2, p.y-2, 4, 4);
+      log(`touchmove ${p.x.toFixed(0)},${p.y.toFixed(0)}`);
+      e.preventDefault();
+    }, { passive: false });
+
+    canvas.addEventListener('touchend', e => {
+      drawing = false;
+      log('touchend');
+      e.preventDefault();
+    }, { passive: false });
+
+    canvas.addEventListener('touchcancel', e => {
+      drawing = false;
+      log('touchcancel');
+      e.preventDefault();
+    }, { passive: false });
+  </script>
+</body>
+</html>
