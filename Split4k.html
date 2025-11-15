@@ -1,0 +1,215 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>4000文字ごとに改行 - テキスト整形ツール</title>
+<style>
+  :root { --bg:#f7f7f9; --card:#ffffff; --fg:#111; --muted:#666; --accent:#2563eb; }
+  html,body{height:100%}
+  body{margin:0;font-family:system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial,'Noto Sans JP',sans-serif;background:var(--bg);color:var(--fg)}
+  .container{max-width:960px;margin:24px auto;padding:0 16px}
+  .card{background:var(--card);border-radius:16px;box-shadow:0 6px 18px rgba(0,0,0,.06);padding:20px}
+  h1{font-size:clamp(18px,3.5vw,24px);margin:0 0 8px}
+  p.hint{color:var(--muted);margin-top:0}
+  .row{display:grid;gap:12px}
+  @media (min-width:900px){ .row{grid-template-columns:1fr 1fr} }
+  .box{border:1px solid #e5e7eb;border-radius:12px;padding:12px;background:#fff}
+  textarea{width:100%;min-height:220px;border:0;outline:none;resize:vertical;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:14px;line-height:1.6}
+  .controls{display:flex;flex-wrap:wrap;gap:10px;align-items:center;margin:12px 0}
+  .controls input[type="number"]{width:120px;padding:8px 10px;border:1px solid #e5e7eb;border-radius:10px}
+  .controls select{padding:8px 10px;border:1px solid #e5e7eb;border-radius:10px}
+  .btn{cursor:pointer;border:0;border-radius:999px;padding:10px 16px;font-weight:600}
+  .btn.primary{background:var(--accent);color:#fff}
+  .btn.soft{background:#eef2ff;color:#3730a3}
+  .btn.ghost{background:#f1f5f9;color:#0f172a}
+  .btn:disabled{opacity:.5;cursor:not-allowed}
+  .filebox{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+  .drop{flex:1 1 260px;border:2px dashed #cbd5e1;border-radius:12px;padding:14px;text-align:center;color:#475569;background:#f8fafc}
+  .kpis{display:flex;gap:16px;flex-wrap:wrap;color:#475569}
+  .kpis span{background:#f1f5f9;padding:6px 10px;border-radius:999px}
+  .footer{color:#64748b;font-size:12px;margin-top:8px}
+  .mono{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
+</style>
+</head>
+<body>
+  <div class="container">
+    <div class="card">
+      <h1>4000文字ごとに改行 — テキスト整形ツール</h1>
+      <p class="hint">改行のないテキストを<span class="mono">N</span>文字ごとに改行へ。ファイル読込／貼り付けのどちらでもOK。</p>
+
+      <div class="filebox">
+        <input id="file" type="file" accept=".txt,.log,.csv,.json,.md,.rtf,.html,.xml,.yml,.yaml" />
+        <button id="clearFile" class="btn ghost" type="button">ファイル選択をクリア</button>
+        <div id="drop" class="drop" tabindex="0">ここにファイルをドラッグ＆ドロップ／クリック</div>
+      </div>
+
+      <div class="controls">
+        <label>文字数<span class="mono">(N)</span>：<input id="chunk" type="number" min="1" max="2000000" value="4000" /></label>
+        <label>改行コード：
+          <select id="newline">
+            <option value="\n">LF (\n)</option>
+            <option value="\r\n">CRLF (\r\n)</option>
+          </select>
+        </label>
+        <button id="convert" class="btn primary" type="button">変換する</button>
+        <button id="copy" class="btn soft" type="button" disabled>出力をコピー</button>
+        <button id="download" class="btn soft" type="button" disabled>出力をダウンロード</button>
+      </div>
+
+      <div class="row">
+        <div class="box">
+          <strong>入力（貼り付け可）</strong>
+          <textarea id="input" placeholder="ここにテキストを貼り付けるか、上のファイル選択で読み込んでください"></textarea>
+        </div>
+        <div class="box">
+          <strong>出力（N文字ごとに改行）</strong>
+          <textarea id="output" placeholder="ここに出力が表示されます" readonly></textarea>
+        </div>
+      </div>
+
+      <div class="kpis" id="kpis" aria-live="polite"></div>
+      <div class="footer">※ Unicodeサロゲートペア対応（絵文字等を途中で分割しません）。クライアント内のみで処理し、データは送信されません。</div>
+    </div>
+  </div>
+
+<script>
+(function(){
+  const $ = (id)=>document.getElementById(id);
+  const fileInput = $('file');
+  const clearFileBtn = $('clearFile');
+  const drop = $('drop');
+  const input = $('input');
+  const output = $('output');
+  const chunk = $('chunk');
+  const newline = $('newline');
+  const convertBtn = $('convert');
+  const copyBtn = $('copy');
+  const downloadBtn = $('download');
+  const kpis = $('kpis');
+
+  let currentFilename = '';
+
+  function readFile(f){
+    if(!f) return;
+    currentFilename = f.name || '';
+    const reader = new FileReader();
+    reader.onload = e => {
+      input.value = e.target.result || '';
+      updateKPIs();
+    };
+    reader.readAsText(f, 'utf-8');
+  }
+
+  fileInput.addEventListener('change', (e)=>{
+    const f = e.target.files && e.target.files[0];
+    readFile(f);
+  });
+
+  clearFileBtn.addEventListener('click', ()=>{
+    fileInput.value = '';
+    currentFilename = '';
+  });
+
+  ;['dragenter','dragover'].forEach(ev=>drop.addEventListener(ev,(e)=>{
+    e.preventDefault(); e.stopPropagation();
+    drop.style.background = '#eef2ff';
+  }));
+  ;['dragleave','drop'].forEach(ev=>drop.addEventListener(ev,(e)=>{
+    e.preventDefault(); e.stopPropagation();
+    drop.style.background = '#f8fafc';
+  }));
+  drop.addEventListener('drop',(e)=>{
+    const f = e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files[0];
+    readFile(f);
+  });
+  drop.addEventListener('click', ()=> fileInput.click());
+
+  input.addEventListener('input', updateKPIs);
+
+  function splitEvery(str, n){
+    const lines = [];
+    let buf = '';
+    let count = 0;
+    for(const ch of str){
+      buf += ch;
+      if(++count === n){
+        lines.push(buf);
+        buf = '';
+        count = 0;
+      }
+    }
+    if(buf) lines.push(buf);
+    return lines;
+  }
+
+  function convert(){
+    const n = Math.max(1, Math.min(2000000, Number(chunk.value)||4000));
+    const nl = newline.value;
+    const src = input.value || '';
+    if(!src){
+      output.value = '';
+      copyBtn.disabled = true;
+      downloadBtn.disabled = true;
+      updateKPIs();
+      return;
+    }
+    const lines = splitEvery(src, n);
+    const joined = lines.join(nl + nl);
+    output.value = joined;
+    copyBtn.disabled = joined.length === 0;
+    downloadBtn.disabled = joined.length === 0;
+    updateKPIs(lines, joined);
+  }
+
+  function updateKPIs(linesOpt, outOpt){
+    const src = input.value || '';
+    const srcLen = [...src].length;
+    const out = outOpt ?? output.value ?? '';
+    const outLen = [...out].length;
+    const lines = linesOpt ?? (out ? out.split(/\r?\n/) : []);
+    const items = [];
+    items.push(`<span>入力文字数：<strong>${srcLen.toLocaleString()}</strong></span>`);
+    if(out){
+      items.push(`<span>出力文字数：<strong>${outLen.toLocaleString()}</strong></span>`);
+      items.push(`<span>行数：<strong>${lines.length.toLocaleString()}</strong></span>`);
+      const n = Number(chunk.value)||4000;
+      items.push(`<span>N：<strong>${n.toLocaleString()}</strong></span>`);
+      items.push(`<span>改行：<strong>${newline.value === "\n" ? 'LF' : 'CRLF'}</strong></span>`);
+    }
+    kpis.innerHTML = items.join('');
+  }
+
+  convertBtn.addEventListener('click', convert);
+
+  copyBtn.addEventListener('click', async ()=>{
+    try{
+      await navigator.clipboard.writeText(output.value || '');
+      copyBtn.textContent = 'コピーしました';
+      setTimeout(()=>copyBtn.textContent='出力をコピー', 1200);
+    }catch(err){
+      alert('クリップボードにコピーできませんでした');
+    }
+  });
+
+  downloadBtn.addEventListener('click', ()=>{
+    const blob = new Blob([output.value || ''], {type:'text/plain;charset=utf-8'});
+    const a = document.createElement('a');
+    const base = currentFilename ? currentFilename.replace(/\.[^.]+$/, '') : 'wrapped';
+    const n = Number(chunk.value)||4000;
+    a.download = `${base}_every-${n}.txt`;
+    a.href = URL.createObjectURL(blob);
+    document.body.appendChild(a);
+    a.click();
+    URL.revokeObjectURL(a.href);
+    a.remove();
+  });
+
+  ['input','change'].forEach(ev=>{
+    chunk.addEventListener(ev, ()=>{ if(input.value) convert(); });
+    newline.addEventListener(ev, ()=>{ if(input.value) convert(); });
+  });
+})();
+</script>
+</body>
+</html>
