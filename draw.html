@@ -216,8 +216,21 @@
     </div>
     <div class="canvasBox" style="margin-top:8px">
       <div id="stage">
-        <img id="bgImgEl" alt="">
-        <canvas id="cvs" width="520" height="520"></canvas>
+          <img id="bgImgEl" 
+               alt=""
+               style="position:absolute; inset:0;
+                      width:100%; height:100%;
+                      object-fit:contain;
+                      opacity:0.35;
+                      pointer-events:none;
+                      z-index:1;      /* ← グリッドより前へ！ */
+                      display:none;" />
+
+          <canvas id="cvs"
+                  width="520" height="520"
+                  style="position:absolute; inset:0;
+                         z-index:2;      /* ← 下絵より前（線はこちら） */
+                         touch-action:none;" />
       </div>
     </div>
     <div class="small muted" style="margin-top:6px">
@@ -851,3 +864,4 @@ updateFramesAndPreview();
 
 </body>
 </html>
+
