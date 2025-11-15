@@ -1,0 +1,370 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>プロッタ画像・合成エディタ（RAW5/JSON 読込・拡大縮小・パン・重ね・保存）</title>
+<style>
+  :root{--bg:#fafafa;--fg:#111;--muted:#666;--line:#e5e7eb;--accent:#0ea5e9;--ok:#16a34a;--warn:#f59e0b}
+  html,body{height:100%}
+  body{margin:0;font:14px/1.45 system-ui, -apple-system, Segoe UI, Roboto, Noto Sans JP, sans-serif;background:var(--bg);color:var(--fg)}
+  header{max-width:1180px;margin:0 auto;padding:16px}
+  h1{font-size:20px;margin:0 0 6px}
+  .muted{color:var(--muted)}
+  .wrap{max-width:1180px;margin:0 auto;padding:0 16px 16px;display:grid;grid-template-columns:380px 1fr;gap:16px}
+  .card{background:#fff;border:1px solid var(--line);border-radius:16px;padding:12px}
+  .row{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+  .row>*{flex:0 0 auto}
+  button{border:1px solid var(--line);background:#fff;border-radius:12px;padding:8px 10px;cursor:pointer}
+  button.primary{background:var(--accent);color:#fff;border-color:transparent}
+  button.good{background:var(--ok);color:#fff;border-color:transparent}
+  input[type="range"]{width:160px}
+  .small{font-size:12px}
+  .canvasBox{display:flex;align-items:center;justify-content:center;background:#fff;border:1px solid var(--line);border-radius:16px;height:min(82vh,740px)}
+  canvas{
+    background:#fff;
+    border-radius:12px;
+    box-shadow:0 0 0 1px var(--line) inset;
+    touch-action:none;           /* ← 追加：iPhoneでパン・ズームを無効化 */
+    -webkit-user-select:none;   /* ← お好みで：長押し選択防止 */
+    user-select:none;
+  }
+  .layer{border:1px solid var(--line);border-radius:12px;padding:8px;margin-top:8px}
+  .layerHead{display:flex;align-items:center;gap:8px;justify-content:space-between}
+  .layerCtl{display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-top:8px}
+  .stat{font:12px/1.3 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace}
+  .drop{border:2px dashed var(--line);border-radius:12px;padding:10px;text-align:center}
+</style>
+</head>
+<body>
+  <header>
+    <h1>プロッタ画像・合成エディタ</h1>
+    <div class="muted small">RAW5（0/1+YYXX）/ JSON を複数読み込み、<b>拡大縮小・X/Y移動（パン）・重ね合わせ</b>して新しいデータとして保存できます。表示用のパン/ズームも別にあります。</div>
+  </header>
+
+  <div class="wrap">
+    <aside class="card" id="side">
+      <div class="row">
+        <input id="file" type="file" accept=".json,.txt,.hex,.dat" multiple />
+        <button id="btnAdd" class="primary">追加</button>
+        <button id="btnClear">全レイヤ削除</button>
+      </div>
+      <div id="drop" class="drop small" style="margin-top:8px">ここに JSON / RAW5 をドラッグ＆ドロップ<br><span class="muted">（複数可）</span></div>
+
+      <hr style="border:none;border-top:1px solid var(--line);margin:12px 0" />
+
+      <div class="row">
+        <div class="small muted" style="font-weight:600">ビュー操作</div>
+      </div>
+      <div class="row">
+        <label class="small">ズーム</label>
+        <input id="zoomView" type="range" min="0.5" max="5" step="0.1" value="1" />
+        <span id="zoomViewLbl" class="small">1.0×</span>
+        <button id="btnResetView">原点へ</button>
+      </div>
+      <div class="small muted">キャンバス上ドラッグでパン、ダブルクリックで原点へ。右側は0–180グリッド。</div>
+
+      <hr style="border:none;border-top:1px solid var(--line);margin:12px 0" />
+
+      <div class="row">
+        <div class="small muted" style="font-weight:600">エクスポート</div>
+      </div>
+      <div class="row">
+        <button id="btnSaveJSON" class="good">JSON保存</button>
+        <button id="btnSaveRAW">RAW5保存</button>
+        <button id="btnSavePNG">PNG保存</button>
+      </div>
+
+      <div id="layers"></div>
+    </aside>
+
+    <main class="card">
+      <div class="muted small">キャンバス（0–180）。各レイヤは**個別に**拡大縮小・X/Y移動・不透明度・表示非表示を設定。右の保存はすべての可視レイヤを<strong>順番に合成</strong>して出力します（レイヤ順=上から下）。</div>
+      <div class="canvasBox" style="margin-top:8px">
+        <canvas id="cvs" width="600" height="600"></canvas>
+      </div>
+      <div id="metrics" class="stat" style="margin-top:6px">レイヤ: 0 / 合成点数: 0</div>
+    </main>
+  </div>
+
+<script>
+// -------------------- 基本ユーティリティ --------------------
+const LOGICAL_SIZE = 180 // 0..180
+const CANVAS_PX = 600
+const COLOR_TABLE = ['#1d4ed8','#dc2626','#059669','#d97706','#7c3aed','#0891b2']
+
+function clamp180(n){n=Math.round(n); if(n<0)return 0; if(n>180)return 180; return n}
+function toHex4(n){let s=(n&0xffff).toString(16).toUpperCase(); while(s.length<4)s='0'+s; return s}
+function packFrame(penUp,x,y){const pen=penUp?'1':'0'; const v=((clamp180(y)&0xff)<<8)|(clamp180(x)&0xff); return pen+toHex4(v)}
+function unpackFrame(f){const penUp=f[0]==='1'; const v=parseInt(f.slice(1),16)&0xffff; const y=(v>>8)&0xff; const x=v&0xff; return {penUp,x,y}}
+function parseRAW5(raw){const cleaned=raw.replace(/[^0-9A-Fa-f\s]/g,'').replace(/\s+/g,''); const arr=[]; for(let i=0;i+5<=cleaned.length;i+=5){arr.push(cleaned.slice(i,i+5).toUpperCase())} return arr}
+function framesToStrokes(frs){
+  const s=[]; let cur=[];
+  for(const f of frs){
+    const {penUp,x,y}=unpackFrame(f);
+    if(penUp){ if(cur.length){ s.push(cur); cur=[]; } }
+    else { cur.push({x,y}); }
+  }
+  if(cur.length) s.push(cur);
+  return s;
+}
+function strokesToFrames(sts){
+  const out=[];
+  for(const stroke of sts){
+    if(!stroke.length) continue;
+    const start = stroke[0];
+    out.push(packFrame(true, start.x, start.y));   // 開始penUp
+    for(const p of stroke) out.push(packFrame(false, p.x, p.y)); // 本体はpenDown
+  }
+  return out;
+}
+function framesToRAW5(frames, withSpaces=false, perLine=0){ if(perLine>0){const lines=[]; for(let i=0;i<frames.length;i+=perLine){lines.push(frames.slice(i,i+perLine).join(withSpaces?' ':''))} return lines.join('\n')} return withSpaces?frames.join(' '):frames.join('') }
+
+// -------------------- レイヤ管理 --------------------
+let layers=[] // {id,name,color,visible,alpha,scale,dx,dy,strokes}
+let nextId=1
+
+function addLayerFromFrames(name, frames){
+  const strokes = framesToStrokes(frames)
+  layers.push({
+    id: nextId++, name: name||`Layer ${nextId-1}`,
+    color: COLOR_TABLE[(nextId-2)%COLOR_TABLE.length],
+    visible: true, alpha: 1,
+    scale: 1, dx: 0, dy: 0,
+    strokes
+  })
+  renderLayerList(); draw(); updateMetrics()
+}
+
+function addLayerFromTextFile(file){
+  return file.text().then(text=>{
+    if(file.name.endsWith('.json')){
+      const pj = JSON.parse(text);
+      if(!pj || !Array.isArray(pj.frames)) throw new Error('JSONにframes配列がありません');
+      if(pj.frames.length===0) throw new Error('JSONのframesが空です');
+      addLayerFromFrames(file.name, pj.frames);
+    }else{ // RAW5
+      const arr = parseRAW5(text);
+      if(arr.length===0) throw new Error('RAW5が空です（5桁連結 or 整形のはず）');
+      addLayerFromFrames(file.name, arr);
+    }
+  }).catch(err=>{
+    alert(`${file.name}: ${err?.message||'読み込みエラー'}`);
+  });
+}
+
+function clearLayers(){ layers=[]; renderLayerList(); draw(); updateMetrics() }
+
+function renderLayerList(){
+  const box=document.getElementById('layers')
+  box.innerHTML=''
+  layers.forEach((ly, idx)=>{
+    const el=document.createElement('div'); el.className='layer'
+    el.innerHTML = `
+      <div class="layerHead">
+        <div class="row">
+          <input type="checkbox" ${ly.visible? 'checked':''} data-k="vis" data-id="${ly.id}" />
+          <div class="small" style="width:10px;height:10px;border-radius:50%;background:${ly.color}"></div>
+          <div class="small stat" style="max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${ly.name}">${ly.name}</div>
+        </div>
+        <div class="row">
+          <button data-k="dup" data-id="${ly.id}">複製</button>
+          <button data-k="up" data-id="${ly.id}">↑</button>
+          <button data-k="down" data-id="${ly.id}">↓</button>
+          <button data-k="del" data-id="${ly.id}">削除</button>
+        </div>
+      </div>
+      <div class="layerCtl">
+        <div class="small">不透明度
+          <div class="row"><input type="range" min="0" max="1" step="0.05" value="${ly.alpha}" data-k="alpha" data-id="${ly.id}" /><span class="small stat" id="alpha-${ly.id}">${ly.alpha.toFixed(2)}</span></div>
+        </div>
+        <div class="small">拡大縮小
+          <div class="row"><input type="range" min="0.2" max="3" step="0.05" value="${ly.scale}" data-k="scale" data-id="${ly.id}" /><span class="small stat" id="scale-${ly.id}">${ly.scale.toFixed(2)}</span></div>
+        </div>
+        <div class="small">X移動
+          <div class="row"><input type="range" min="-90" max="90" step="1" value="${ly.dx}" data-k="dx" data-id="${ly.id}" /><span class="small stat" id="dx-${ly.id}">${ly.dx}</span></div>
+        </div>
+        <div class="small">Y移動
+          <div class="row"><input type="range" min="-90" max="90" step="1" value="${ly.dy}" data-k="dy" data-id="${ly.id}" /><span class="small stat" id="dy-${ly.id}">${ly.dy}</span></div>
+        </div>
+      </div>
+      <div class="small stat">点数: ${ly.strokes.reduce((s,st)=>s+st.length,0)}</div>
+    `
+    box.appendChild(el)
+  })
+}
+
+// レイヤUIイベント委譲
+document.getElementById('layers').addEventListener('input', e=>{
+  const t=e.target; const id=+t.getAttribute('data-id'); const k=t.getAttribute('data-k'); const ly=layers.find(x=>x.id===id); if(!ly) return
+  if(k==='alpha'){ ly.alpha=parseFloat(t.value); document.getElementById(`alpha-${id}`).textContent=ly.alpha.toFixed(2) }
+  if(k==='scale'){ ly.scale=parseFloat(t.value); document.getElementById(`scale-${id}`).textContent=ly.scale.toFixed(2) }
+  if(k==='dx'){ ly.dx=parseInt(t.value); document.getElementById(`dx-${id}`).textContent=ly.dx }
+  if(k==='dy'){ ly.dy=parseInt(t.value); document.getElementById(`dy-${id}`).textContent=ly.dy }
+  draw()
+})
+
+document.getElementById('layers').addEventListener('click', e=>{
+  const t=e.target; const id=+t.getAttribute('data-id'); const k=t.getAttribute('data-k'); const i=layers.findIndex(x=>x.id===id); if(i<0) return
+  if(k==='dup'){ layers.splice(i+1,0, JSON.parse(JSON.stringify(layers[i])) ); layers[i+1].id=nextId++; layers[i+1].name+=" copy" }
+  if(k==='del'){ layers.splice(i,1) }
+  if(k==='up' && i>0){ const tmp=layers[i-1]; layers[i-1]=layers[i]; layers[i]=tmp }
+  if(k==='down' && i<layers.length-1){ const tmp=layers[i+1]; layers[i+1]=layers[i]; layers[i]=tmp }
+  if(k==='vis'){ layers[i].visible = !layers[i].visible }
+  renderLayerList(); draw(); updateMetrics()
+})
+
+// -------------------- 変換（拡大縮小・平行移動） --------------------
+function transformPoint(p, scale, dx, dy){
+  return { x: clamp180(p.x*scale + dx), y: clamp180(p.y*scale + dy) }
+}
+
+function transformStrokes(strokes, scale, dx, dy){
+  return strokes.map(st=> st.map(p=> transformPoint(p, scale, dx, dy)))
+}
+
+// -------------------- 合成と保存 --------------------
+function collectVisibleTransformed(){
+  let out=[]
+  for(const ly of layers){
+    if(!ly.visible) continue
+    const ts = transformStrokes(ly.strokes, ly.scale, ly.dx, ly.dy)
+    out = out.concat(ts)
+  }
+  return out
+}
+
+function exportFrames(){
+  const strokes = collectVisibleTransformed()
+  return strokesToFrames(strokes)
+}
+
+function download(filename, content, type='text/plain'){
+  const blob=new Blob([content],{type}); const url=URL.createObjectURL(blob); const a=document.createElement('a'); a.href=url; a.download=filename; document.body.appendChild(a); a.click(); a.remove(); URL.revokeObjectURL(url)
+}
+
+// -------------------- Canvas 表示系 --------------------
+const cvs=document.getElementById('cvs'); const ctx=cvs.getContext('2d')
+let zoomView=1, viewOffset={x:0,y:0}
+
+function drawGrid(){
+  const s = CANVAS_PX / LOGICAL_SIZE;
+  // 目盛り
+  ctx.strokeStyle = '#eee';
+  ctx.lineWidth = 1/zoomView;
+  for(let i=0;i<=LOGICAL_SIZE;i+=10){
+    ctx.beginPath(); ctx.moveTo(i*s,0); ctx.lineTo(i*s,LOGICAL_SIZE*s); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(0,i*s); ctx.lineTo(LOGICAL_SIZE*s,i*s); ctx.stroke();
+  }
+  // 中心軸
+  ctx.strokeStyle = '#bbb';
+  ctx.beginPath();
+  ctx.moveTo(90*s,0); ctx.lineTo(90*s,LOGICAL_SIZE*s);
+  ctx.moveTo(0,90*s); ctx.lineTo(LOGICAL_SIZE*s,90*s);
+  ctx.stroke();
+}
+
+function draw(){
+  ctx.clearRect(0,0,cvs.width,cvs.height);
+  ctx.save(); ctx.translate(viewOffset.x, viewOffset.y); ctx.scale(zoomView, zoomView);
+
+  drawGrid();
+
+  const s = CANVAS_PX / LOGICAL_SIZE;
+  layers.forEach(ly=>{
+    if(!ly.visible) return;
+    ctx.save();
+    ctx.globalAlpha = ly.alpha;
+    ctx.strokeStyle = ly.color;
+    ctx.lineWidth = 2/zoomView;
+
+    const ts = transformStrokes(ly.strokes, ly.scale, ly.dx, ly.dy);
+    for(const st of ts){
+      if(!st.length) continue;
+      ctx.beginPath();
+      ctx.moveTo(st[0].x*s, st[0].y*s);
+      for(let i=1;i<st.length;i++) ctx.lineTo(st[i].x*s, st[i].y*s);
+      ctx.stroke();
+    }
+    ctx.restore();
+  });
+
+  ctx.restore();
+}
+
+// ビュー操作
+let panning=false, sx=0, sy=0, ox=0, oy=0
+cvs.addEventListener('mousedown', e=>{panning=true; sx=e.clientX; sy=e.clientY; ox=viewOffset.x; oy=viewOffset.y})
+window.addEventListener('mousemove', e=>{if(!panning) return; viewOffset.x = ox + (e.clientX - sx); viewOffset.y = oy + (e.clientY - sy); draw()})
+window.addEventListener('mouseup', ()=>{panning=false})
+cvs.addEventListener('dblclick', ()=>{viewOffset={x:0,y:0}; zoomView=1; document.getElementById('zoomView').value='1'; document.getElementById('zoomViewLbl').textContent='1.0×'; draw()})
+
+document.getElementById('zoomView').addEventListener('input', e=>{ zoomView=parseFloat(e.target.value); document.getElementById('zoomViewLbl').textContent=zoomView.toFixed(1)+'×'; draw() })
+document.getElementById('btnResetView').addEventListener('click', ()=>{viewOffset={x:0,y:0}; zoomView=1; document.getElementById('zoomView').value='1'; document.getElementById('zoomViewLbl').textContent='1.0×'; draw()})
+
+// ---- タッチでのパン（iPhone / iPad 用）----
+function firstTouch(e){
+  return e.touches[0] || e.changedTouches[0];
+}
+
+cvs.addEventListener('touchstart', (e) => {
+  const t = firstTouch(e);
+  if (!t) return;
+  panning = true;
+  sx = t.clientX;
+  sy = t.clientY;
+  ox = viewOffset.x;
+  oy = viewOffset.y;
+  e.preventDefault();          // キャンバス上のスクロールを止める
+}, { passive: false });
+
+cvs.addEventListener('touchmove', (e) => {
+  if (!panning) return;
+  const t = firstTouch(e);
+  if (!t) return;
+  viewOffset.x = ox + (t.clientX - sx);
+  viewOffset.y = oy + (t.clientY - sy);
+  draw();
+  e.preventDefault();
+}, { passive: false });
+
+cvs.addEventListener('touchend', (e) => {
+  panning = false;
+  // ここでは preventDefault してもいいし、省略してもOK
+}, { passive: false });
+
+cvs.addEventListener('touchcancel', (e) => {
+  panning = false;
+}, { passive: false });
+
+// -------------------- メトリクス --------------------
+function updateMetrics(){
+  const total = collectVisibleTransformed().reduce((s,st)=>s+st.length,0)
+  const m = document.getElementById('metrics'); if(m) m.textContent = `レイヤ: ${layers.length} / 合成点数: ${total}`
+}
+
+// -------------------- I/O --------------------
+const fileInput=document.getElementById('file')
+document.getElementById('btnAdd').addEventListener('click',()=>{ if(!fileInput.files?.length) return; Promise.all(Array.from(fileInput.files).map(addLayerFromTextFile)).then(()=>{fileInput.value='';}) })
+
+document.getElementById('btnClear').addEventListener('click', clearLayers)
+
+const drop=document.getElementById('drop');
+drop.addEventListener('dragover',e=>{e.preventDefault(); drop.style.borderColor='var(--accent)'})
+drop.addEventListener('dragleave',()=>{drop.style.borderColor='var(--line)'})
+drop.addEventListener('drop',e=>{e.preventDefault(); drop.style.borderColor='var(--line)'; if(e.dataTransfer?.files?.length){ Promise.all(Array.from(e.dataTransfer.files).map(addLayerFromTextFile)) }})
+
+// 保存
+function framesToJSON(frames){ return JSON.stringify({meta:{width:LOGICAL_SIZE,height:LOGICAL_SIZE,version:'mb-plotter-1'},frames}, null, 2) }
+
+document.getElementById('btnSaveJSON').addEventListener('click', ()=>{ const frames=exportFrames(); download('plot-combined.json', framesToJSON(frames), 'application/json') })
+
+document.getElementById('btnSaveRAW').addEventListener('click', ()=>{ const frames=exportFrames(); download('plot-combined-raw5.txt', framesToRAW5(frames, true, 20)) })
+
+document.getElementById('btnSavePNG').addEventListener('click', ()=>{ const a=document.createElement('a'); a.href=cvs.toDataURL('image/png'); a.download='plot-combined.png'; a.click() })
+
+// 初期
+draw(); updateMetrics()
+</script>
+</body>
+</html>
