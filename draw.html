@@ -559,41 +559,56 @@ updateFramesAndPreview()
 <script>
 /* 下絵の処理（元のまま） */
 (function(){
-  const bgFile = document.getElementById('bgFile');
+  const bgFile    = document.getElementById('bgFile');
   const bgClearBtn = document.getElementById('btnBgClear');
   const bgOpacity = document.getElementById('bgOpacity');
-  const bgImgEl = document.getElementById('bgImgEl');
+  const bgImgEl   = document.getElementById('bgImgEl');
 
-  if(bgFile && bgImgEl){
+  if (!bgImgEl) return;
+
+  // 念のため初期状態で非表示
+  bgImgEl.style.display = 'none';
+
+  // 下絵読み込み
+  if(bgFile){
     bgFile.addEventListener('change', (e)=>{
       const f = e.target.files && e.target.files[0];
       if(!f){ return; }
       const fr = new FileReader();
       fr.onload = () => {
+        // 読み込み完了したら表示
+        bgImgEl.onload = () => {
+          bgImgEl.style.display = 'block';
+        };
         bgImgEl.src = fr.result;
       };
       fr.readAsDataURL(f);
     });
   }
 
-  if(bgClearBtn && bgImgEl){
+  // 下絵クリア
+  if(bgClearBtn){
     bgClearBtn.addEventListener('click', ()=>{
-      // ★ ここを強めにリセットする
-      bgImgEl.src = "";              // 実際のsrcも空にする
-      bgImgEl.removeAttribute('src'); // 念のため属性も消す
-      if (bgFile) bgFile.value = "";  // ファイル選択もクリア
+      // iOS Safariでも確実に消すため displayごとOFF
+      bgImgEl.style.display = 'none';
+      bgImgEl.src = "";
+      bgImgEl.removeAttribute('src');
+      if (bgFile) bgFile.value = "";
     });
   }
 
-  if(bgOpacity && bgImgEl){
+  // 濃さ調整
+  if(bgOpacity){
     bgOpacity.addEventListener('input', ()=>{
       bgImgEl.style.opacity = String(bgOpacity.value);
     });
   }
 })();
+
 </script>
 </body>
 </html>
+
 
 
 
