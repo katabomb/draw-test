@@ -1,115 +1,200 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="ja">
 <head>
-  <meta charset="UTF-8">
-  <title>iPhoneタッチ検証キャンバス</title>
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-
-  <style>
-    html, body {
-      margin: 0;
-      padding: 0;
-      height: 100%;
-      overflow: hidden;
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>100均ペンプロッタ ツール集</title>
+<style>
+  :root{
+    --bg:#f5f5f7;
+    --card:#ffffff;
+    --fg:#111827;
+    --muted:#6b7280;
+    --accent:#0ea5e9;
+    --line:#e5e7eb;
+  }
+  html,body{height:100%}
+  body{
+    margin:0;
+    font:14px/1.5 system-ui,-apple-system,Segoe UI,Roboto,"Noto Sans JP",sans-serif;
+    background:var(--bg);
+    color:var(--fg);
+  }
+  header{
+    max-width:980px;
+    margin:0 auto;
+    padding:16px 16px 4px;
+  }
+  h1{
+    font-size:20px;
+    margin:0 0 6px;
+  }
+  .muted{color:var(--muted)}
+  .small{font-size:12px}
+  .wrap{
+    max-width:980px;
+    margin:0 auto;
+    padding:8px 16px 20px;
+    display:grid;
+    gap:12px;
+  }
+  @media (min-width:800px){
+    .wrap{
+      grid-template-columns:repeat(2,minmax(0,1fr));
     }
-    #debug {
-      position: fixed;
-      left: 0;
-      top: 0;
-      padding: 4px 6px;
-      background: rgba(0,0,0,0.5);
-      color: #fff;
-      font-size: 12px;
-      z-index: 10;
-    }
-    canvas {
-      display: block;
-      width: 100vw;
-      height: 100vh;
-      background: #fff;
-      touch-action: none;
-    }
-  </style>
+  }
+  .card{
+    background:var(--card);
+    border-radius:16px;
+    border:1px solid var(--line);
+    padding:12px 14px;
+    display:flex;
+    flex-direction:column;
+    gap:8px;
+  }
+  .card h2{
+    font-size:15px;
+    margin:0;
+    display:flex;
+    align-items:center;
+    gap:6px;
+  }
+  .tag{
+    font-size:11px;
+    padding:2px 6px;
+    border-radius:999px;
+    background:#e0f2fe;
+    color:#0369a1;
+  }
+  .btn{
+    display:inline-flex;
+    align-items:center;
+    justify-content:center;
+    gap:6px;
+    padding:8px 12px;
+    border-radius:999px;
+    border:1px solid var(--accent);
+    color:#0f172a;
+    text-decoration:none;
+    font-size:13px;
+    background:#ecfeff;
+  }
+  .btn span.icon{
+    font-size:14px;
+  }
+  .btn.main{
+    background:var(--accent);
+    color:#fff;
+  }
+  ul{
+    padding-left:18px;
+    margin:4px 0 0;
+  }
+  li{margin:0 0 2px}
+  footer{
+    max-width:980px;
+    margin:0 auto;
+    padding:0 16px 16px;
+    font-size:11px;
+    color:var(--muted);
+  }
+</style>
 </head>
 <body>
-  <div id="debug">no event</div>
-  <canvas id="c"></canvas>
+<header>
+  <h1>100均ペンプロッタ ツール集</h1>
+  <div class="muted small">
+    iPhone / PC から使える、micro:bit ペンプロッタ用のデータ作成＆編集ツールの入り口ページです。
+  </div>
+</header>
 
-  <script>
-    const canvas = document.getElementById('c');
-    const dbg    = document.getElementById('debug');
-    const ctx    = canvas.getContext('2d');
+<div class="wrap">
+  <!-- メインのお絵描きツール -->
+  <section class="card">
+    <h2>① お絵描き＆RAW5生成 <span class="tag">メイン</span></h2>
+    <p class="small muted">
+      指やマウスで絵を描き、0–180 グリッドにスナップして RAW5 / JSON を生成。下絵の読み込み・スムージング・間引き対応。
+    </p>
+    <ul class="small">
+      <li>手描き → RAW5 / JSON 出力</li>
+      <li>SVG / JSON / RAW5 読み込み</li>
+      <li>下絵の背景表示（濃さ調整）</li>
+      <li>ズーム / パン / スムージング</li>
+    </ul>
+    <a class="btn main" href="draw.html">
+      <span class="icon">🖊️</span><span>お絵描きツールを開く（draw.html）</span>
+    </a>
+  </section>
 
-    function resize() {
-      canvas.width  = window.innerWidth;
-      canvas.height = window.innerHeight;
-      ctx.fillStyle = '#000';
-    }
-    window.addEventListener('resize', resize);
-    resize();
+  <!-- 画像・プロット合成エディタ -->
+  <section class="card">
+    <h2>② プロッタ画像・合成エディタ</h2>
+    <p class="small muted">
+      既存のプロッタデータ（RAW5 / JSON）を複数レイヤとして読み込み、拡大縮小・平行移動して合成するためのツール。
+    </p>
+    <ul class="small">
+      <li>複数レイヤの重ね合わせ</li>
+      <li>レイヤごとのスケール・移動調整</li>
+      <li>合成結果を RAW5 / JSON に書き出し</li>
+    </ul>
+    <a class="btn" href="プロッタ画像・合成エディタ.html">
+      <span class="icon">🧩</span><span>合成エディタを開く</span>
+    </a>
+  </section>
 
-    let drawing = false;
+  <!-- 2枚比較ビューア -->
+  <section class="card">
+    <h2>③ 2枚比較ビューワー</h2>
+    <p class="small muted">
+      2つのプロッタデータを左右並列・重ね・点滅表示で比較するツール。調整前後の差分確認に便利。
+    </p>
+    <ul class="small">
+      <li>左右並列 / 重ね / A/B点滅モード</li>
+      <li>ズーム / パンで詳細確認</li>
+      <li>全体距離や点数の簡易メトリクス表示</li>
+    </ul>
+    <a class="btn" href="micro_bitプロッター_2_枚比較ビューワー.html">
+      <span class="icon">🔍</span><span>2枚比較ツールを開く</span>
+    </a>
+  </section>
 
-    function log(msg) {
-      dbg.textContent = msg;
-    }
+  <!-- フレーム倍密度化ツール -->
+  <section class="card">
+    <h2>④ フレーム密度 ×2 ツール</h2>
+    <p class="small muted">
+      RAW5 / JSON のフレーム間に中間点を挿入して、見かけ上の描画解像度を 2倍にするユーティリティ。
+    </p>
+    <ul class="small">
+      <li>RAW5 / JSON を読み込み</li>
+      <li>フレーム間に中間点を挿入（×2）</li>
+      <li>結果を新しいファイルとしてダウンロード</li>
+    </ul>
+    <a class="btn" href="PlotDoubler.html">
+      <span class="icon">➕</span><span>フレーム倍密度化ツールを開く</span>
+    </a>
+  </section>
 
-    function getTouchPos(e) {
-      const rect = canvas.getBoundingClientRect();
-      const t = e.touches[0] || e.changedTouches[0];
-      return {
-        x: t.clientX - rect.left,
-        y: t.clientY - rect.top
-      };
-    }
+  <!-- テキスト改行ツール -->
+  <section class="card">
+    <h2>⑤ 4000文字ごと改行ツール</h2>
+    <p class="small muted">
+      改行のないテキストを 4000 文字ごとに区切って 2連改行を挿入する整形ツール。RAW5 テキストの分割にも利用可能。
+    </p>
+    <ul class="small">
+      <li>任意テキスト / ファイルを入力</li>
+      <li>4000文字ごとに空行入りで整形</li>
+      <li>コピー / ダウンロード可能</li>
+    </ul>
+    <a class="btn" href="4000_文字ごとに改行.html">
+      <span class="icon">✂️</span><span>テキスト整形ツールを開く</span>
+    </a>
+  </section>
 
-    // マウス（PC動作確認用）
-    canvas.addEventListener('mousedown', e => {
-      if (e.button !== 0) return;
-      drawing = true;
-      log('mousedown');
-    });
-    window.addEventListener('mousemove', e => {
-      if (!drawing) return;
-      const rect = canvas.getBoundingClientRect();
-      const x = e.clientX - rect.left;
-      const y = e.clientY - rect.top;
-      ctx.fillRect(x-2, y-2, 4, 4);
-      log(`mouse ${x.toFixed(0)},${y.toFixed(0)}`);
-    });
-    window.addEventListener('mouseup', () => {
-      drawing = false;
-      log('mouseup');
-    });
+</div>
 
-    // タッチ（iPhone / iPad）
-    canvas.addEventListener('touchstart', e => {
-      drawing = true;
-      const p = getTouchPos(e);
-      ctx.fillRect(p.x-2, p.y-2, 4, 4);
-      log(`touchstart ${p.x.toFixed(0)},${p.y.toFixed(0)}`);
-      e.preventDefault();
-    }, { passive: false });
+<footer>
+  <div>※ 各ツールは同一リポジトリ内の HTML を前提にしています。ファイル名を変更した場合は、リンク先（href）も合わせて修正してください。</div>
+</footer>
 
-    canvas.addEventListener('touchmove', e => {
-      if (!drawing) return;
-      const p = getTouchPos(e);
-      ctx.fillRect(p.x-2, p.y-2, 4, 4);
-      log(`touchmove ${p.x.toFixed(0)},${p.y.toFixed(0)}`);
-      e.preventDefault();
-    }, { passive: false });
-
-    canvas.addEventListener('touchend', e => {
-      drawing = false;
-      log('touchend');
-      e.preventDefault();
-    }, { passive: false });
-
-    canvas.addEventListener('touchcancel', e => {
-      drawing = false;
-      log('touchcancel');
-      e.preventDefault();
-    }, { passive: false });
-  </script>
 </body>
 </html>
