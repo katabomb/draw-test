@@ -159,6 +159,7 @@
       <button id="btnSaveJSON">JSON DL</button>
       <button id="btnSaveRAW">RAW5 連結 DL</button>
       <button id="btnSaveRAWLines">RAW5 20/行 DL</button>
+      <button id="btnSavePNG">PNG DL</button>
     </div>
     <div id="drop" class="drop small" style="margin-top:8px">
       ここに SVG / JSON / RAW5 テキストをドラッグ＆ドロップ
@@ -773,6 +774,37 @@ function download(name, content, type="text/plain"){
   a.remove();
   URL.revokeObjectURL(url);
 }
+
+document.getElementById("btnSavePNG").addEventListener("click", () => {
+
+  // ★ オフスクリーンキャンバスを作成
+  const oc = document.createElement("canvas");
+  oc.width = CANVAS_PX;
+  oc.height = CANVAS_PX;
+  const octx = oc.getContext("2d");
+
+  const s = CANVAS_PX / LOGICAL_SIZE;
+
+  // ★ グリッドは描かない！線のみ描画
+  octx.lineWidth = 2;
+  octx.strokeStyle = "#111";
+
+  for (const st of strokes) {
+    if (!st.length) continue;
+    octx.beginPath();
+    octx.moveTo(st[0].x * s, st[0].y * s);
+    for (let i = 1; i < st.length; i++) {
+      octx.lineTo(st[i].x * s, st[i].y * s);
+    }
+    octx.stroke();
+  }
+
+  // ★ 保存（透明PNG）
+  const a = document.createElement("a");
+  a.href = oc.toDataURL("image/png");
+  a.download = "plot-drawing.png";
+  a.click();
+});
 
 document.getElementById("btnSaveRAW").addEventListener("click",()=>{
   const cleaned = cleanFrames(frames);
