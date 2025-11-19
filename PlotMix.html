@@ -25,8 +25,8 @@
     background:#fff;
     border-radius:12px;
     box-shadow:0 0 0 1px var(--line) inset;
-    touch-action:none;           /* ← 追加：iPhoneでパン・ズームを無効化 */
-    -webkit-user-select:none;   /* ← お好みで：長押し選択防止 */
+    touch-action:none;
+    -webkit-user-select:none;
     user-select:none;
   }
   .layer{border:1px solid var(--line);border-radius:12px;padding:8px;margin-top:8px}
@@ -70,8 +70,9 @@
         <div class="small muted" style="font-weight:600">エクスポート</div>
       </div>
       <div class="row">
-        <button id="btnSaveJSON" class="good">JSON保存</button>
-        <button id="btnSaveRAW">RAW5保存</button>
+        <button id="btnSaveJSON" class="good">JSON DL</button>
+        <button id="btnSaveRAWConcat">RAW5 連結 DL</button>
+        <button id="btnSaveRAW">RAW5 20/行 DL</button>
         <button id="btnSavePNG">PNG保存</button>
       </div>
 
@@ -79,7 +80,7 @@
     </aside>
 
     <main class="card">
-      <div class="muted small">キャンバス（0–180）。各レイヤは**個別に**拡大縮小・X/Y移動・不透明度・表示非表示を設定。右の保存はすべての可視レイヤを<strong>順番に合成</strong>して出力します（レイヤ順=上から下）。</div>
+      <div class="muted small">キャンバス（0–180）。各レイヤは<strong>個別に</strong>拡大縮小・X/Y移動・不透明度・表示非表示を設定。右の保存はすべての可視レイヤを<strong>順番に合成</strong>して出力します（レイヤ順=上から下）。</div>
       <div class="canvasBox" style="margin-top:8px">
         <canvas id="cvs" width="600" height="600"></canvas>
       </div>
@@ -118,7 +119,16 @@ function strokesToFrames(sts){
   }
   return out;
 }
-function framesToRAW5(frames, withSpaces=false, perLine=0){ if(perLine>0){const lines=[]; for(let i=0;i<frames.length;i+=perLine){lines.push(frames.slice(i,i+perLine).join(withSpaces?' ':''))} return lines.join('\n')} return withSpaces?frames.join(' '):frames.join('') }
+function framesToRAW5(frames, withSpaces=false, perLine=0){
+  if(perLine>0){
+    const lines=[];
+    for(let i=0;i<frames.length;i+=perLine){
+      lines.push(frames.slice(i,i+perLine).join(withSpaces?' ':''));
+    }
+    return lines.join('\n');
+  }
+  return withSpaces?frames.join(' '):frames.join('');
+}
 
 // -------------------- レイヤ管理 --------------------
 let layers=[] // {id,name,color,visible,alpha,scale,dx,dy,strokes}
@@ -315,7 +325,7 @@ cvs.addEventListener('touchstart', (e) => {
   sy = t.clientY;
   ox = viewOffset.x;
   oy = viewOffset.y;
-  e.preventDefault();          // キャンバス上のスクロールを止める
+  e.preventDefault();
 }, { passive: false });
 
 cvs.addEventListener('touchmove', (e) => {
@@ -330,7 +340,6 @@ cvs.addEventListener('touchmove', (e) => {
 
 cvs.addEventListener('touchend', (e) => {
   panning = false;
-  // ここでは preventDefault してもいいし、省略してもOK
 }, { passive: false });
 
 cvs.addEventListener('touchcancel', (e) => {
@@ -355,13 +364,64 @@ drop.addEventListener('dragleave',()=>{drop.style.borderColor='var(--line)'})
 drop.addEventListener('drop',e=>{e.preventDefault(); drop.style.borderColor='var(--line)'; if(e.dataTransfer?.files?.length){ Promise.all(Array.from(e.dataTransfer.files).map(addLayerFromTextFile)) }})
 
 // 保存
-function framesToJSON(frames){ return JSON.stringify({meta:{width:LOGICAL_SIZE,height:LOGICAL_SIZE,version:'mb-plotter-1'},frames}, null, 2) }
+function framesToJSON(frames){
+  return JSON.stringify(
+    {meta:{width:LOGICAL_SIZE,height:LOGICAL_SIZE,version:'mb-plotter-1'},frames},
+    null,2
+  );
+}
 
-document.getElementById('btnSaveJSON').addEventListener('click', ()=>{ const frames=exportFrames(); download('plot-combined.json', framesToJSON(frames), 'application/json') })
+document.getElementById('btnSaveJSON').addEventListener('click', ()=>{
+  const frames=exportFrames();
+  download('plot-combined.json', framesToJSON(frames), 'application/json');
+});
 
-document.getElementById('btnSaveRAW').addEventListener('click', ()=>{ const frames=exportFrames(); download('plot-combined-raw5.txt', framesToRAW5(frames, true, 20)) })
+// ★ RAW5連結保存（改行・スペースなし）
+document.getElementById('btnSaveRAWConcat').addEventListener('click', ()=>{
+  const frames=exportFrames();
+  download('plot-combined-raw5-concat.txt', framesToRAW5(frames, false, 0));
+});
 
-document.getElementById('btnSavePNG').addEventListener('click', ()=>{ const a=document.createElement('a'); a.href=cvs.toDataURL('image/png'); a.download='plot-combined.png'; a.click() })
+// ★ RAW5(20/行)保存
+document.getElementById('btnSaveRAW').addEventListener('click', ()=>{
+  const frames=exportFrames();
+  download('plot-combined-raw5-20perline.txt', framesToRAW5(frames, true, 20));
+});
+
+document.getElementById('btnSavePNG').addEventListener('click', ()=>{
+  // ★ 新しいオフスクリーンcanvas（同サイズ）
+  const oc = document.createElement('canvas');
+  oc.width = CANVAS_PX;
+  oc.height = CANVAS_PX;
+  const octx = oc.getContext('2d');
+
+  const s = CANVAS_PX / LOGICAL_SIZE;
+
+  // ★ 可視レイヤの線だけ描画（グリッド描かない！）
+  layers.forEach(ly=>{
+    if(!ly.visible) return;
+    octx.save();
+    octx.globalAlpha = ly.alpha;
+    octx.strokeStyle = ly.color;
+    octx.lineWidth = 2;
+
+    const ts = transformStrokes(ly.strokes, ly.scale, ly.dx, ly.dy);
+    for(const st of ts){
+      if(!st.length) continue;
+      octx.beginPath();
+      octx.moveTo(st[0].x*s, st[0].y*s);
+      for(let i=1;i<st.length;i++) octx.lineTo(st[i].x*s, st[i].y*s);
+      octx.stroke();
+    }
+    octx.restore();
+  });
+
+  // ★ 保存
+  const a=document.createElement('a');
+  a.href=oc.toDataURL('image/png');
+  a.download='plot-lines-only.png';
+  a.click();
+});
 
 // 初期
 draw(); updateMetrics()
