@@ -133,7 +133,7 @@
 </head>
 <body>
 
-<!-- 下絵コントロール（元と同じUI） -->
+<!-- 下絵コントロール -->
 <div class="row" id="bgControls" style="gap:8px; align-items:center; flex-wrap:wrap; margin:8px 16px 0;">
   <input id="bgFile" type="file" accept="image/*" />
   <button id="btnBgClear" type="button">下絵クリア</button>
@@ -172,6 +172,7 @@
         <div class="row" style="margin-top:6px">
           <button id="toolDraw">描く</button>
           <button id="toolPan">パン</button>
+          <button id="btnUndo">一手戻す</button><!-- ★追加 -->
           <button id="btnClear">全消去</button>
         </div>
       </div>
@@ -215,8 +216,7 @@
       キャンバス（0–180 グリッド）。描画すると自動で RAW5 / JSON が更新されます。
     </div>
     <div class="canvasBox" style="margin-top:8px">
-      <div id="stage" style="position:relative; width:520px; height:520px; background:white;   /* ★ 白背景 */
-                  margin:auto;">
+      <div id="stage" style="position:relative; width:520px; height:520px; background:white; margin:auto;">
         <img id="bgImgEl"
              style="position:absolute; inset:0;
                     width:100%; height:100%;
@@ -229,7 +229,7 @@
                 width="520" height="520"
                 style="position:absolute; inset:0;
                        z-index:2;
-                       background:transparent;    /* ★ 透明に */
+                       background:transparent;
                        touch-action:none;" />
       </div>
     </div>
@@ -289,6 +289,22 @@ function parseRAW5(raw){
 /* ========== データ（ストローク & フレーム） ========== */
 let strokes = [];  // Array<Array<{x,y}>>
 let frames = [];   // Array<"0/1YYYY">
+
+/* ★ Undo用履歴 */
+let history = [];  // Array<strokesスナップショット>
+
+function cloneStrokes(src){
+  return src.map(st => st.map(p => ({ x:p.x, y:p.y })));
+}
+function pushHistory(){
+  history.push(cloneStrokes(strokes));
+  if(history.length > 20) history.shift(); // 履歴は20手まで
+}
+function undoOnce(){
+  if(!history.length) return;
+  strokes = history.pop();
+  updateFramesAndPreview();
+}
 
 function framesToStrokes(frs){
   const s = [];
@@ -515,8 +531,10 @@ function simplifyByMinDistance(stroke, minDist){
 function applySmoothAndSimplify(){
   const win  = +document.getElementById("smoothWin").value;
   const minD = +document.getElementById("minDist").value;
+  if(!strokes.length) return;
+  pushHistory();  // ★適用前の状態を保存
   strokes = strokes.map(s=>{
-    const smoothed = movingAverageKeepEnds(s,win);
+    const smoothed   = movingAverageKeepEnds(s,win);
     const simplified = simplifyByMinDistance(smoothed,minD);
     return simplified;
   });
@@ -550,6 +568,7 @@ function toLogical(e){
   return {x:clamp180(x),y:clamp180(y)};
 }
 function startNewStroke(){
+  pushHistory();       // ★描き始める直前の状態を保存
   strokes.push([]);
 }
 function addPoint(p){
@@ -677,9 +696,13 @@ document.getElementById("zoom").addEventListener("input",e=>{
 document.getElementById("toolDraw").addEventListener("click",()=>setTool("draw"));
 document.getElementById("toolPan").addEventListener("click",()=>setTool("pan"));
 document.getElementById("btnClear").addEventListener("click",()=>{
+  if(!strokes.length) return;
+  pushHistory();        // ★消す前に保存
   strokes=[];
   updateFramesAndPreview();
 });
+document.getElementById("btnUndo").addEventListener("click", undoOnce); // ★Undoボタン
+
 document.getElementById("smoothWin").addEventListener("input",e=>{
   document.getElementById("smoothLbl").textContent=e.target.value;
 });
@@ -792,12 +815,14 @@ async function handleFiles(files){
     if(file.name.endsWith(".svg")){
       const svg = parseSVGText(text);
       if(!svg){alert("SVGの解析に失敗しました");continue;}
+      pushHistory(); // ★読み込み前の状態も一応保存（任意）
       strokes = pointsFromSVG(svg,2);
       updateFramesAndPreview();
     }else if(file.name.endsWith(".json")){
       try{
         const pj=JSON.parse(text);
         if(!pj.frames||!Array.isArray(pj.frames)) throw 0;
+        pushHistory();
         frames=pj.frames;
         strokes=framesToStrokes(frames);
         updateFramesAndPreview();
@@ -805,6 +830,7 @@ async function handleFiles(files){
         alert("JSON形式が不正です");
       }
     }else if(file.name.endsWith(".txt")||file.name.endsWith(".hex")||file.name.endsWith(".dat")){
+      pushHistory();
       frames=parseRAW5(text);
       strokes=framesToStrokes(frames);
       updateFramesAndPreview();
@@ -864,5 +890,3 @@ updateFramesAndPreview();
 
 </body>
 </html>
-
-
